@@ -3,21 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Guddu - AI English Tutor</title>
+  <title>Guddu - AI English Tutor (No API Key)</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
     body { background: #f1f5f9; display: flex; flex-direction: column; height: 100vh; }
     header { background: #1e40af; color: white; padding: 12px 16px; text-align: center; }
     header h1 { font-size: 1.2rem; }
     
-    .settings-bar { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-    .level-bar { display: flex; justify-content: center; gap: 8px; }
+    .level-bar { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
     .level-btn { border: none; padding: 6px 14px; border-radius: 20px; font-weight: 600; cursor: pointer; background: #93c5fd; color: #1e3a8a; font-size: 0.85rem; }
     .level-btn.active { background: #ffffff; color: #1e40af; box-shadow: 0 2px 4px rgba(0,0,0,0.15); }
-    
-    .key-container { display: flex; justify-content: center; gap: 6px; padding: 0 10px; }
-    .key-container input { flex: 1; max-width: 260px; padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; font-size: 0.8rem; }
-    .key-container button { padding: 6px 12px; background: #059669; color: white; border: none; border-radius: 6px; font-size: 0.8rem; cursor: pointer; }
 
     #chat { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
     .msg-group { display: flex; flex-direction: column; max-width: 85%; }
@@ -32,62 +27,81 @@
     
     .controls { padding: 14px; background: white; border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
     #micBtn { width: 62px; height: 62px; border-radius: 50%; border: none; background: #2563eb; color: white; font-size: 1.8rem; cursor: pointer; box-shadow: 0 4px 10px rgba(37,99,235,0.3); }
+    #micBtn:disabled { background: #94a3b8; cursor: not-allowed; }
     #micBtn.listening { background: #ef4444; animation: pulse 1.2s infinite; }
     @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
-    .status { font-size: 0.85rem; color: #64748b; }
+    .status { font-size: 0.85rem; color: #64748b; text-align: center; }
   </style>
+
+  <!-- Load WebLLM (Runs AI inside browser without API keys) -->
+  <script type="module">
+    import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+    window.webllm = webllm;
+  </script>
 </head>
 <body>
   <header>
-    <h1>👋 Guddu - AI Speaking Coach</h1>
-    <div class="settings-bar">
-      <div class="level-bar">
-        <button class="level-btn active" onclick="setLevel('basic', this)">Basic</button>
-        <button class="level-btn" onclick="setLevel('moderate', this)">Moderate</button>
-        <button class="level-btn" onclick="setLevel('pro', this)">Pro</button>
-      </div>
-      <div class="key-container">
-        <input type="password" id="apiKeyInput" placeholder="Paste Gemini API Key" />
-        <button onclick="saveApiKey()">Save</button>
-      </div>
+    <h1>👋 Guddu - Free AI Speaking Coach</h1>
+    <div class="level-bar">
+      <button class="level-btn active" onclick="setLevel('basic', this)">Basic</button>
+      <button class="level-btn" onclick="setLevel('moderate', this)">Moderate</button>
+      <button class="level-btn" onclick="setLevel('pro', this)">Pro</button>
     </div>
   </header>
 
   <div id="chat">
     <div class="msg-group guddu">
-      <div class="msg">
-        Hi there! I'm Guddu, your friendly English speaking partner. Paste your Gemini API key above and click Save, then tap the mic to speak!
+      <div class="msg" id="welcomeMsg">
+        Hi! I am Guddu. Please wait a few seconds while I load into your browser...
       </div>
     </div>
   </div>
 
   <div class="controls">
-    <div class="status" id="statusText">Tap mic to speak</div>
-    <button id="micBtn" onclick="toggleMic()">🎙</button>
+    <div class="status" id="statusText">Initializing AI engine...</div>
+    <button id="micBtn" onclick="toggleMic()" disabled>🎙</button>
   </div>
 
   <script>
     let currentLevel = 'basic';
     let isListening = false;
-    let apiKey = localStorage.getItem('gemini_api_key') || '';
+    let engine = null;
     let conversationHistory = [];
 
     const chat = document.getElementById('chat');
     const micBtn = document.getElementById('micBtn');
     const statusText = document.getElementById('statusText');
-    const apiKeyInput = document.getElementById('apiKeyInput');
+    const welcomeMsg = document.getElementById('welcomeMsg');
 
-    if (apiKey) {
-      apiKeyInput.value = apiKey;
+    // Initialize WebLLM model locally in the browser
+    async function initAI() {
+      try {
+        const selectedModel = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC"; // Lightweight & fast for mobile browsers
+        engine = new window.webllm.MLCEngine();
+        engine.setInitProgressCallback((report) => {
+          statusText.innerText = `Loading AI: ${report.text}`;
+        });
+
+        await engine.reload(selectedModel);
+        statusText.innerText = "Guddu is ready! Tap mic to speak.";
+        welcomeMsg.innerText = "Hello! I am Guddu, your friendly English speaking partner. Tap the mic below to start speaking!";
+        micBtn.disabled = false;
+        speakGuddu(welcomeMsg.innerText);
+      } catch (err) {
+        console.error(err);
+        statusText.innerText = "Browser doesn't support WebGPU. Use latest Chrome.";
+      }
     }
 
-    function saveApiKey() {
-      const val = apiKeyInput.value.trim();
-      if (!val) return alert("Please enter your Gemini API key.");
-      localStorage.setItem('gemini_api_key', val);
-      apiKey = val;
-      alert("API Key saved! Now tap the mic to practice with Guddu.");
-    }
+    window.addEventListener('DOMContentLoaded', () => {
+      // Wait for module import to complete
+      const checkInterval = setInterval(() => {
+        if (window.webllm) {
+          clearInterval(checkInterval);
+          initAI();
+        }
+      }, 300);
+    });
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition = null;
@@ -118,15 +132,11 @@
       recognition.onerror = () => {
         isListening = false;
         micBtn.classList.remove('listening');
-        statusText.innerText = "Could not hear clearly. Tap mic to retry.";
+        statusText.innerText = "Could not hear clearly. Tap to retry.";
       };
     }
 
     function toggleMic() {
-      if (!apiKey) {
-        alert("Please paste your Gemini API Key into the box at the top and click Save first!");
-        return;
-      }
       if (!recognition) {
         alert("Speech recognition is not supported in this browser. Please use Chrome.");
         return;
@@ -175,52 +185,39 @@
 
     async function callGudduAI(userText) {
       statusText.innerText = "Guddu is thinking...";
-      
-      const systemPrompt = `You are "Guddu", a friendly, patient, encouraging conversational English tutor and peer.
-The user is speaking to you to practice spoken English.
 
-Current Level: ${currentLevel.toUpperCase()}
-Level Guidelines:
-- BASIC: Use short, simple sentences (5 to 9 words). Speak clearly. Only correct obvious tense or subject-verb errors.
-- MODERATE: Natural everyday conversational tone. Suggest natural idioms, correct prepositions, and smooth phrasing.
-- PRO: Expressive, eloquent, debate-ready English. Suggest richer vocabulary and polish sentence flow.
-
+      const systemPrompt = `You are "Guddu", a friendly, warm English conversation coach.
+Current Level: ${currentLevel.toUpperCase()}.
 Rules:
-1. Respond directly and authentically to whatever the user says or asks (like a real human friend named Guddu).
-2. If the user makes an English mistake, identify it. If their sentence is correct, set has_error to false.
-3. Always finish your conversational response with an engaging follow-up question.
+1. Speak in friendly, conversational English suitable for ${currentLevel} level.
+2. Answer the user's question or talk to them like a genuine friend.
+3. If they made an English grammar mistake, detect it.
 4. Output MUST be ONLY valid JSON matching this schema:
-{
-  "has_error": boolean,
-  "user_phrase": "exact mistaken part, or null",
-  "corrected_phrase": "corrected natural version, or null",
-  "explanation": "short 1-sentence friendly tip, or null",
-  "guddu_reply": "your friendly spoken answer"
-}`;
+{"has_error": boolean, "user_phrase": "mistake phrase or null", "corrected_phrase": "fixed phrase or null", "explanation": "friendly tip or null", "guddu_reply": "your conversational response"}`;
 
-      conversationHistory.push({ role: "user", parts: [{ text: userText }] });
-
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      conversationHistory.push({ role: "user", content: userText });
 
       try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: systemPrompt }] },
-            contents: conversationHistory,
-            generationConfig: {
-              response_mime_type: "application/json",
-              temperature: 0.7
-            }
-          })
+        const response = await engine.chat.completions.create({
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...conversationHistory
+          ],
+          temperature: 0.7
         });
 
-        const data = await response.json();
-        const resultText = data.candidates[0].content.parts[0].text;
-        const parsed = JSON.parse(resultText);
+        const replyContent = response.choices[0].message.content;
+        let parsed;
+        try {
+          parsed = JSON.parse(replyContent);
+        } catch {
+          parsed = {
+            has_error: false,
+            guddu_reply: replyContent
+          };
+        }
 
-        conversationHistory.push({ role: "model", parts: [{ text: parsed.guddu_reply }] });
+        conversationHistory.push({ role: "assistant", content: parsed.guddu_reply });
 
         addMessage(parsed.guddu_reply, 'guddu', {
           has_error: parsed.has_error,
@@ -233,11 +230,9 @@ Rules:
         statusText.innerText = "Tap mic to speak";
       } catch (err) {
         console.error(err);
-        statusText.innerText = "Error. Please check your API key.";
-        alert("Request failed. Please verify that your Gemini API key is valid and has quota.");
+        statusText.innerText = "Error processing speech.";
       }
     }
   </script>
 </body>
-  </html>
-  
+</html>
